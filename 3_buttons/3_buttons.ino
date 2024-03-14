@@ -1,24 +1,36 @@
-#include <Arduino.h>
 #include <TM1637Display.h>
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
-
-
-
-#define TEST_DELAY 2000
-
-
-
+#include "RTC.h"
 
 //Pins on the arduino
   //buttons
-const int BUTTON_1 = 2;
-const int BUTTON_2 = 4;
-const int BUTTON_3 = 7;
+const int BUTTON_0 = 2;
+const int BUTTON_1 = 4;
+const int BUTTON_2 = 7;
   //number display
 const int CLK = 9;
 const int DIO = 8;
 
+int lastBState[3] = {LOW, LOW, LOW}; 
+int currentBState[3] = {LOW, LOW, LOW};
+int debounceTime = 50;
+
+int alarmTime[2] = {8,30};
+
+const uint8_t tSet[] = {
+  SEG_F | SEG_G | SEG_E | SEG_D,          // t
+  SEG_A | SEG_F | SEG_G | SEG_C | SEG_D,  // S
+  SEG_A | SEG_D | SEG_E | SEG_F | SEG_G,  // E
+  SEG_F | SEG_G | SEG_E | SEG_D           // t
+};
+
+const uint8_t aSet[] = {
+  SEG_A | SEG_B | SEG_C | SEG_E | SEG_F | SEG_G,  // A
+  SEG_A | SEG_F | SEG_G | SEG_C | SEG_D,          // S
+  SEG_A | SEG_D | SEG_E | SEG_F | SEG_G,          // E
+  SEG_F | SEG_G | SEG_E | SEG_D                   // t
+};
 
 //Inits
 
@@ -30,15 +42,22 @@ ArduinoLEDMatrix matrix;
 void setup() {
   Serial.begin(115200);
   Buttons:
+  pinMode(BUTTON_0, INPUT_PULLUP);
   pinMode(BUTTON_1, INPUT_PULLUP);
   pinMode(BUTTON_2, INPUT_PULLUP);
-  pinMode(BUTTON_3, INPUT_PULLUP);
   //Led display
   matrix.begin();
   matrix.stroke(0xFFFFFFFF);
 
   display.setBrightness(1);
   display.clear();
+
+  RTC.begin();
+
+  RTCTime startTime(1, Month::JANUARY, 2024, 00, 00, 00, DayOfWeek::MONDAY, SaveLight::SAVING_TIME_ACTIVE);
+
+  RTC.setTime(startTime);
+
 }
 
 void show_number(const char nbr[]) {
@@ -50,31 +69,149 @@ void show_number(const char nbr[]) {
   matrix.endDraw();
 }
 
+void displayTime(int hour, int minutes){
+  int displayTime = hour * 100 + minutes;
+  display.showNumberDecEx(displayTime, 0b01000000, true, 4, 0);
+}
+
+void timeInputButtonLoop(int time[]){
+  int i = 0;
+  while(i < 2){
+    currentBState[1] = digitalRead(BUTTON_1);
+    currentBState[2] = digitalRead(BUTTON_2);
+
+    if(currentBState[1] != lastBState[1]){
+      if(currentBState[1] == HIGH){
+        if(i == 0){
+          time[1] += 1;
+          if(time[1] == 60){
+            time[1] = 0;
+          }
+        } else if(i == 1){
+          time[0] += 1;
+          if(time[0] == 24){
+            time[0] = 0;
+          }
+        } 
+      }
+      displayTime(time[0], time[1]);
+    }
+
+    if(currentBState[2] != lastBState[2]){
+      if(currentBState[2] == HIGH){
+        i += 1;
+      }
+    }
+
+    delay(debounceTime);
+    lastBState[1] = currentBState[1];
+    lastBState[2] = currentBState[2];
+  }
+}
+
+void setAlarm(){
+  displayTime(alarmTime[0],alarmTime[1]);
+
+  timeInputButtonLoop(alarmTime);
+
+  display.setSegments(aSet);
+  delay(1000);
+}
+
+void setClockTime(){
+
+  RTCTime currentTime;
+  RTC.getTime(currentTime);
+
+  int hour = currentTime.getHour();
+  int minutes = currentTime.getMinutes();
+
+  displayTime(hour, minutes);
+
+  //to set hours and minutes
+  int i = 0;
+  while(i < 2){
+
+    currentBState[1] = digitalRead(BUTTON_1);
+    currentBState[2] = digitalRead(BUTTON_2);
+
+    if(currentBState[1] != lastBState[1]){
+      if(currentBState[1] == HIGH){
+        if(i == 0){
+          minutes += 1;
+          if(minutes == 60){
+            minutes = 0;
+          }
+        } else if(i == 1){
+          hour += 1;
+          if(hour == 24){
+            hour = 0;
+          }
+        } 
+      }
+      displayTime(hour, minutes);
+    }
+
+    if(currentBState[2] != lastBState[2]){
+      if(currentBState[2] == HIGH){
+        i += 1;
+      }
+    }
+
+    delay(debounceTime);
+    lastBState[1] = currentBState[1];
+    lastBState[2] = currentBState[2];
+  }
+
+  display.setSegments(tSet);
+  RTCTime newTime(1, Month::JANUARY, 2024, hour, minutes, 00, DayOfWeek::MONDAY, SaveLight::SAVING_TIME_ACTIVE);
+  RTC.setTime(newTime);
+  delay(1000);
+  displayTime(hour, minutes);
+}
+
 
 void loop() {
+
+  currentBState[0] = digitalRead(BUTTON_0);
+  currentBState[1] = digitalRead(BUTTON_1);
+  currentBState[2] = digitalRead(BUTTON_2);
+
+  RTCTime currentTime;
+
+  RTC.getTime(currentTime);
+
+  displayTime(currentTime.getHour(), currentTime.getMinutes());
+
+
 
   int k;
   uint8_t data[] = { 0xff, 0xff, 0xff, 0xff };
   uint8_t blank[] = { 0x00, 0x00, 0x00, 0x00 };
 
-  if(digitalRead(BUTTON_1) == HIGH){
-    show_number("1");
-    display.showNumberDec(1, false);
+  if(currentBState[0] != lastBState[0]){
+    lastBState[0] = currentBState[0];
+    if (currentBState[0] == HIGH){
+      show_number("1");
+    }
   }
 
-  if (digitalRead(BUTTON_2) == HIGH){
-    show_number("2");
-    display.showNumberDec(2, false);
-  }
-  
-  if (digitalRead(BUTTON_3) == HIGH){
-    show_number("3");
-    display.showNumberDec(3, false);
+  if(currentBState[1] != lastBState[1]){
+    lastBState[1] = currentBState[1];
+    if (currentBState[1] == HIGH){
+      show_number("2");
+      setAlarm();
+    }
   }
 
+  if(currentBState[2] != lastBState[2]){
+    lastBState[2] = currentBState[2];
+    if (currentBState[2] == HIGH){
+      setClockTime();
+    }
+  }
+
   
-
-
   
-
+  
 }
