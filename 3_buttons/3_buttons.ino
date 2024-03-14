@@ -37,8 +37,6 @@ const uint8_t aSet[] = {
 TM1637Display display(CLK, DIO);
 ArduinoLEDMatrix matrix;
 
-
-
 void setup() {
   Serial.begin(115200);
   Buttons:
@@ -113,8 +111,8 @@ void setAlarm(){
   displayTime(alarmTime[0],alarmTime[1]);
 
   timeInputButtonLoop(alarmTime);
-
   display.setSegments(aSet);
+
   delay(1000);
 }
 
@@ -123,51 +121,18 @@ void setClockTime(){
   RTCTime currentTime;
   RTC.getTime(currentTime);
 
-  int hour = currentTime.getHour();
-  int minutes = currentTime.getMinutes();
+  int newTime[2] = {currentTime.getHour(), currentTime.getMinutes()};
 
-  displayTime(hour, minutes);
+  displayTime(newTime[0], newTime[1]);
 
-  //to set hours and minutes
-  int i = 0;
-  while(i < 2){
-
-    currentBState[1] = digitalRead(BUTTON_1);
-    currentBState[2] = digitalRead(BUTTON_2);
-
-    if(currentBState[1] != lastBState[1]){
-      if(currentBState[1] == HIGH){
-        if(i == 0){
-          minutes += 1;
-          if(minutes == 60){
-            minutes = 0;
-          }
-        } else if(i == 1){
-          hour += 1;
-          if(hour == 24){
-            hour = 0;
-          }
-        } 
-      }
-      displayTime(hour, minutes);
-    }
-
-    if(currentBState[2] != lastBState[2]){
-      if(currentBState[2] == HIGH){
-        i += 1;
-      }
-    }
-
-    delay(debounceTime);
-    lastBState[1] = currentBState[1];
-    lastBState[2] = currentBState[2];
-  }
-
+  timeInputButtonLoop(newTime);
   display.setSegments(tSet);
-  RTCTime newTime(1, Month::JANUARY, 2024, hour, minutes, 00, DayOfWeek::MONDAY, SaveLight::SAVING_TIME_ACTIVE);
-  RTC.setTime(newTime);
+
+  //give new time to RTC
+  RTCTime newRTCTime(1, Month::JANUARY, 2024, newTime[0], newTime[1], 00, DayOfWeek::MONDAY, SaveLight::SAVING_TIME_ACTIVE);
+  RTC.setTime(newRTCTime);
+
   delay(1000);
-  displayTime(hour, minutes);
 }
 
 
@@ -182,12 +147,6 @@ void loop() {
   RTC.getTime(currentTime);
 
   displayTime(currentTime.getHour(), currentTime.getMinutes());
-
-
-
-  int k;
-  uint8_t data[] = { 0xff, 0xff, 0xff, 0xff };
-  uint8_t blank[] = { 0x00, 0x00, 0x00, 0x00 };
 
   if(currentBState[0] != lastBState[0]){
     lastBState[0] = currentBState[0];
@@ -210,8 +169,5 @@ void loop() {
       setClockTime();
     }
   }
-
-  
-  
   
 }
