@@ -2,6 +2,7 @@
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include "RTC.h"
+#include "pitches.h"
 
 //Pins on the arduino
   //buttons
@@ -11,12 +12,16 @@ const int BUTTON_2 = 7;
   //number display
 const int CLK = 9;
 const int DIO = 8;
+  //speaker
+const int SPEAKER = 10;
 
 int lastBState[3] = {LOW, LOW, LOW}; 
 int currentBState[3] = {LOW, LOW, LOW};
 int debounceTime = 50;
 
-int alarmTime[2] = {8,30};
+int alarmTime[2] = {0,0};
+
+bool alarm_set = false;
 
 const uint8_t tSet[] = {
   SEG_F | SEG_G | SEG_E | SEG_D,          // t
@@ -30,6 +35,13 @@ const uint8_t aSet[] = {
   SEG_A | SEG_F | SEG_G | SEG_C | SEG_D,          // S
   SEG_A | SEG_D | SEG_E | SEG_F | SEG_G,          // E
   SEG_F | SEG_G | SEG_E | SEG_D                   // t
+};
+
+const uint8_t aOff[] = {
+  SEG_A | SEG_B | SEG_C | SEG_E | SEG_F | SEG_G,  // A
+  SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,  // O
+  SEG_A | SEG_E | SEG_F | SEG_G,                  // f
+  SEG_A | SEG_E | SEG_F | SEG_G,                  // f
 };
 
 //Inits
@@ -56,6 +68,58 @@ void setup() {
 
   RTC.setTime(startTime);
 
+}
+
+//Helper functions
+
+void play_alarm(){
+  int melody_length = 20;
+  //Contains the notes
+  int melody[] = {
+    NOTE_C4, 
+    NOTE_A3, NOTE_C4, NOTE_C4, NOTE_A4, NOTE_F4,
+    NOTE_C4, NOTE_A4, NOTE_G4, NOTE_F4, NOTE_E4, NOTE_D4,
+    NOTE_C4, NOTE_A3, NOTE_C4, NOTE_G4, NOTE_E4, NOTE_C4,
+    NOTE_G4, NOTE_F4
+  };
+  // Contains duration
+  int noteDurations[] = {
+    32, 
+    32, 16, 32, 16, 16,
+    16, 24, 64, 32, 32, 32, 32,
+    32, 16, 32, 32, 16, 32, 
+    4
+  };
+
+  bool break_loop = false;
+  while(!break_loop){
+    for (int i = 0; i < melody_length; i++) {
+      //check if alarm off is pressed:
+      currentBState[0] = digitalRead(BUTTON_0);
+      if(currentBState[0] != lastBState[0]){
+        lastBState[0] = currentBState[0];
+        if(currentBState[0] == HIGH){
+          break_loop = true;
+          break;
+        }
+      }
+
+      // to calculate the note duration, take one second divided by the note type.
+      //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+      int noteDuration = 4000 / noteDurations[i];
+      tone(10, melody[i], noteDuration);
+
+      // to distinguish the notes, set a minimum time between them.
+      // the note's duration + 30% seems to work well:
+      int pauseBetweenNotes = noteDuration * 1.30;
+      delay(pauseBetweenNotes);
+      // stop the tone playing:
+      noTone(10);
+    }
+  }
+
+  display.setSegments(aOff);
+  delay(1000);
 }
 
 void show_number(const char nbr[]) {
@@ -112,6 +176,7 @@ void setAlarm(){
 
   timeInputButtonLoop(alarmTime);
   display.setSegments(aSet);
+  alarm_set = true;
 
   delay(1000);
 }
@@ -147,6 +212,14 @@ void loop() {
   RTC.getTime(currentTime);
 
   displayTime(currentTime.getHour(), currentTime.getMinutes());
+
+  //Handle alarm:
+  if(currentTime.getHour() == alarmTime[0] &&
+      currentTime.getMinutes() == alarmTime[1] &&
+      alarm_set){
+        alarm_set = false;
+        play_alarm();
+      }
 
   if(currentBState[0] != lastBState[0]){
     lastBState[0] = currentBState[0];
